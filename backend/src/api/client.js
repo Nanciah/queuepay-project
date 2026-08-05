@@ -7,7 +7,7 @@ import Ticket from '../models/Ticket.js';
 import Transaction from '../models/Transaction.js';
 import User from '../models/User.js';
 import { Op } from 'sequelize';
-import emailService from '../services/EmailService.js';
+import emailService from '../services/emailService.js';
 
 const router = express.Router();
 
