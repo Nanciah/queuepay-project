@@ -7,7 +7,7 @@ import Entity from '../models/Entity.js';
 import Service from '../models/Service.js';
 import Ticket from '../models/Ticket.js';
 import Transaction from '../models/Transaction.js';
-import EmailService from '../services/EmailService.js';
+import emailService from '../services/emailService.js';
 import { auth } from '../middleware/auth.js';
 import { emitCompanyCreated, emitCompanyUpdated, emitCompanyDeleted } from '../sockets/index.js';
 
