@@ -9,7 +9,7 @@ import Service from '../models/Service.js';
 import Ticket from '../models/Ticket.js';
 import Transaction from '../models/Transaction.js';
 import { auth } from '../middleware/auth.js';
-import EmailService from '../services/EmailService.js';
+import EmailService from '../services/emailService.js';
 import { emitServiceCreated, emitServiceUpdated, emitServiceDeleted, getIO } from '../sockets/index.js';
 
 const router = express.Router();
