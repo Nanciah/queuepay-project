@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { Ticket, Service, User } from '../models/index.js';
 import { Op } from 'sequelize';
 import Entity from '../models/Entity.js';
-import EmailService from '../services/EmailService.js';
+import emailService from '../services/emailService.js';
 
 let ioInstance = null;
 
