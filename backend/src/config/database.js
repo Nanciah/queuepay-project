@@ -17,6 +17,13 @@ const sequelize = new Sequelize(
       underscored: true,
       underscoredAll: true,
     },
+    // ✅ AJOUTER CES OPTIONS SSL
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false // Nécessaire pour Render
+      }
+    }
   }
 );
 
