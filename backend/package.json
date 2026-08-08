@@ -17,6 +17,7 @@
     "nodemailer": "^9.0.4",
     "pg": "^8.11.3",
     "pg-hstore": "^2.3.4",
+     "resend": "^3.0.0",
     "sequelize": "^6.33.0",
     "socket.io": "^4.7.2",
     "uuid": "^9.0.1"
