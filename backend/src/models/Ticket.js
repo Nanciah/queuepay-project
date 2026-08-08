@@ -19,6 +19,7 @@ const Ticket = sequelize.define('Ticket', {
         type: DataTypes.UUID,
         allowNull: true
     },
+
     ticket_number: {
         type: DataTypes.STRING(20),
         allowNull: false,
@@ -52,46 +53,14 @@ const Ticket = sequelize.define('Ticket', {
         type: DataTypes.DATE,
         allowNull: true
     },
-    cancellation_reason: {  
+     cancellation_reason: {  
         type: DataTypes.STRING,
         allowNull: true
     },
+    // ✅ AJOUTER CE CHAMP
     payment_status: {
         type: DataTypes.ENUM('pending', 'paid', 'refunded', 'failed'),
         defaultValue: 'pending'
-    },
-    // ✅ AJOUT : COLONNES POUR LES RENDEZ-VOUS
-    appointment_date: {
-        type: DataTypes.DATEONLY,
-        allowNull: true,
-        comment: 'Date du rendez-vous (YYYY-MM-DD)'
-    },
-    appointment_time: {
-        type: DataTypes.TIME,
-        allowNull: true,
-        comment: 'Heure du rendez-vous (HH:MM)'
-    },
-    time_slot_id: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        comment: 'Référence vers le créneau horaire réservé'
-    },
-    // ✅ AJOUT : REMBOURSEMENT
-    refund_amount: {
-        type: DataTypes.DECIMAL(12, 2),
-        defaultValue: 0,
-        comment: 'Montant remboursé'
-    },
-    refund_status: {
-        type: DataTypes.ENUM('none', 'pending', 'completed', 'failed'),
-        defaultValue: 'none',
-        comment: 'Statut du remboursement'
-    },
-    // ✅ AJOUT : POSITION DANS LE CRÉNEAU
-    position_in_slot: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        comment: 'Position dans le créneau horaire (1er, 2ème, etc.)'
     }
 }, {
     timestamps: true,
@@ -99,8 +68,7 @@ const Ticket = sequelize.define('Ticket', {
     tableName: 'tickets',
     underscored: true
 });
-
-// ✅ LES ASSOCIATIONS
+//  LES ASSOCIATIONS
 Ticket.associate = (models) => {
     Ticket.belongsTo(models.Service, {
         foreignKey: 'service_id',
@@ -114,11 +82,9 @@ Ticket.associate = (models) => {
         foreignKey: 'agent_id',
         as: 'agent'
     });
-    // ✅ AJOUT : ASSOCIATION AVEC TIME_SLOT
-    Ticket.belongsTo(models.TimeSlot, {
-        foreignKey: 'time_slot_id',
-        as: 'timeSlot'
-    });
 };
+
+
+
 
 export default Ticket;

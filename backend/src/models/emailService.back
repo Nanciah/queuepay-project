@@ -3,39 +3,20 @@ const nodemailer = require('nodemailer');
 // Configuration du transporteur
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_PORT == 465 ? true : false, // true pour port 465, false pour autres
+    port: process.env.SMTP_PORT || 587,
+    secure: false,
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
     },
-    // Optionnel : ajouter un timeout
-    connectionTimeout: 5000,
-    greetingTimeout: 5000,
-    socketTimeout: 5000,
-});
-
-// Vérifier la configuration au démarrage
-console.log('📧 Email Service configuré avec :', {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_PORT == 465 ? true : false,
-    user: process.env.SMTP_USER ? '✅ Défini' : '❌ Non défini',
-    pass: process.env.SMTP_PASS ? '✅ Défini' : '❌ Non défini',
 });
 
 /**
  * Envoyer un email de réinitialisation de mot de passe
  */
 const sendPasswordResetEmail = async (email, resetLink, userName) => {
-    // Vérifier que les variables sont définies
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-        console.error('❌ SMTP_USER ou SMTP_PASS non défini dans les variables d\'environnement');
-        return false;
-    }
-
     const mailOptions = {
-        from: process.env.SMTP_FROM || `"QueuePay" <${process.env.SMTP_USER}>`,
+        from: `"QueuePay" <${process.env.SMTP_USER}>`,
         to: email,
         subject: 'Réinitialisation de votre mot de passe QueuePay',
         html: `
@@ -83,9 +64,7 @@ const sendPasswordResetEmail = async (email, resetLink, userName) => {
                         <hr style="margin: 20px 0; border: none; border-top: 1px solid #E5E7EB;">
                         <p style="font-size: 14px; color: #6B7280;">
                             L'équipe QueuePay<br>
-                            <a href="${process.env.FRONTEND_URL || 'https://queuepay-frontend.onrender.com'}" style="color: #4F46E5;">
-                                ${process.env.FRONTEND_URL || 'QueuePay'}
-                            </a>
+                            <a href="${process.env.FRONTEND_URL}" style="color: #4F46E5;">${process.env.FRONTEND_URL}</a>
                         </p>
                     </div>
                     <div class="footer">
@@ -99,20 +78,11 @@ const sendPasswordResetEmail = async (email, resetLink, userName) => {
     };
 
     try {
-        const info = await transporter.sendMail(mailOptions);
+        await transporter.sendMail(mailOptions);
         console.log(`📧 Email de réinitialisation envoyé à ${email}`);
-        console.log(`📨 Message ID: ${info.messageId}`);
         return true;
     } catch (error) {
-        console.error('❌ Erreur envoi email:', error.message);
-        console.error('📋 Détails:', error);
-        
-        // Gérer les erreurs courantes
-        if (error.code === 'EAUTH') {
-            console.error('🔑 Erreur d\'authentification : Vérifiez SMTP_USER et SMTP_PASS');
-        } else if (error.code === 'ECONNECTION') {
-            console.error('🌐 Erreur de connexion : Vérifiez SMTP_HOST et SMTP_PORT');
-        }
+        console.error('❌ Erreur envoi email:', error);
         return false;
     }
 };

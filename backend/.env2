@@ -1,0 +1,29 @@
+# Server
+PORT=5000
+NODE_ENV=development
+
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=queuepay
+DB_USER=postgres
+DB_PASSWORD=123456
+
+# JWT
+JWT_SECRET=your_super_secret_jwt_key_change_this_in_production
+JWT_EXPIRES_IN=7d
+
+# WebSocket - Utiliser le même port que le serveur
+WS_PORT=5000
+
+# API URLs
+API_URL=http://localhost:5000
+CLIENT_URL=http://localhost:3000
+
+# ========== EMAIL CONFIGURATION ==========
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=nanciah05@gmail.com
+SMTP_PASS=cccp xkic tvjl btte
+SMTP_FROM="QueuePay <nanciah05@gmail.com>"

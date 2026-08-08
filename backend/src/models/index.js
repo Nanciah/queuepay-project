@@ -11,8 +11,6 @@ import Favorite from './Favorite.js';
 import Notification from './Notification.js';
 import QueueEvent from './QueueEvent.js';
 import PasswordReset from './PasswordReset.js';
-import TimeSlot from './TimeSlot.js';
-
 
 // ========== REGROUPER TOUS LES MODÈLES ==========
 const models = {
@@ -25,8 +23,7 @@ const models = {
   Favorite,
   Notification,
   QueueEvent,
-  PasswordReset,
-  TimeSlot
+  PasswordReset
 };
 
 // ========== DÉFINIR LES ASSOCIATIONS ==========
@@ -37,10 +34,6 @@ User.hasMany(Transaction, { foreignKey: 'user_id', as: 'transactions' });
 User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
 User.hasMany(Favorite, { foreignKey: 'user_id', as: 'favorites' });
 User.belongsTo(Entity, { foreignKey: 'company_id', as: 'company' });
-
-// ===== TIMESLOT ASSOCIATIONS =====
-TimeSlot.belongsTo(Service, { foreignKey: 'service_id', as: 'service' });
-TimeSlot.hasMany(Ticket, { foreignKey: 'time_slot_id', as: 'tickets' });
 
 // ===== ENTITY (COMPANY) ASSOCIATIONS =====
 Entity.hasMany(User, { foreignKey: 'company_id', as: 'users' });
@@ -86,6 +79,5 @@ export {
     Favorite,
     Notification,
     QueueEvent,
-    TimeSlot,
     PasswordReset
 };

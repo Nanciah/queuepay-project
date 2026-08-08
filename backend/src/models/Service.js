@@ -48,35 +48,6 @@ const Service = sequelize.define('Service', {
         type: DataTypes.BOOLEAN,
         defaultValue: true
     },
-    // À AJOUTER DANS Service.js (avant deletedAt)
-allow_appointment: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true
-},
-slot_duration: {
-    type: DataTypes.INTEGER,
-    defaultValue: 15
-},
-appointment_days_ahead: {
-    type: DataTypes.INTEGER,
-    defaultValue: 7
-},
-appointment_start_hour: {
-    type: DataTypes.INTEGER,
-    defaultValue: 8
-},
-appointment_end_hour: {
-    type: DataTypes.INTEGER,
-    defaultValue: 17
-},
-break_start: {
-    type: DataTypes.TIME,
-    allowNull: true
-},
-break_end: {
-    type: DataTypes.TIME,
-    allowNull: true
-},
     deletedAt: {
         type: DataTypes.DATE,
         allowNull: true,
