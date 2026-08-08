@@ -1,26 +1,29 @@
-import { Resend } from 'resend';
+import Mailjet from 'node-mailjet';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 class EmailService {
     constructor() {
-        this.resend = null;
+        this.mailjet = null;
         this.isSimulated = false;
-        this.initResend();
+        this.initMailjet();
     }
 
-    initResend() {
-        if (process.env.RESEND_API_KEY) {
+    initMailjet() {
+        if (process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY) {
             try {
-                this.resend = new Resend(process.env.RESEND_API_KEY);
-                console.log('✅ EmailService: Resend configuré');
+                this.mailjet = Mailjet.apiConnect(
+                    process.env.MAILJET_API_KEY,
+                    process.env.MAILJET_SECRET_KEY
+                );
+                console.log('✅ EmailService: Mailjet configuré');
             } catch (error) {
-                console.log('⚠️ EmailService: Erreur configuration Resend, mode simulation');
+                console.log('⚠️ EmailService: Erreur configuration Mailjet, mode simulation');
                 this.isSimulated = true;
             }
         } else {
-            console.log('⚠️ EmailService: Aucune clé API Resend, mode simulation');
+            console.log('⚠️ EmailService: Clés Mailjet manquantes, mode simulation');
             this.isSimulated = true;
         }
     }
@@ -38,22 +41,25 @@ class EmailService {
         }
 
         try {
-            const { data, error } = await this.resend.emails.send({
-                from: process.env.SMTP_FROM || 'QueuePay <onboarding@resend.dev>',
-                to: [to],
-                subject: subject,
-                html: html,
-            });
+            const request = this.mailjet.post('send', { version: 'v3.1' })
+                .request({
+                    Messages: [{
+                        From: {
+                            Email: process.env.MAILJET_FROM_EMAIL || 'nanciah05@gmail.com',
+                            Name: process.env.MAILJET_FROM_NAME || 'QueuePay'
+                        },
+                        To: [{ Email: to }],
+                        Subject: subject,
+                        HTMLPart: html,
+                        TextPart: html.replace(/<[^>]*>/g, '').substring(0, 500)
+                    }]
+                });
 
-            if (error) {
-                console.error('❌ Erreur Resend:', error);
-                return { success: false, error: error.message };
-            }
-
-            console.log(`✅ Email envoyé à ${to}: ${data?.id}`);
+            const response = await request;
+            console.log(`✅ Email envoyé à ${to}: ${response.body.Messages[0].MessageID}`);
             return {
                 success: true,
-                messageId: data?.id,
+                messageId: response.body.Messages[0].MessageID,
                 simulated: false
             };
         } catch (error) {
