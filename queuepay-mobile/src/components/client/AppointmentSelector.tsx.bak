@@ -1,0 +1,389 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Modal,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import api from '../../services/api';
+import Toast from 'react-native-toast-message';
+
+interface TimeSlot {
+  id: string;
+  start_time: string;
+  end_time: string;
+  available: number;
+  max_capacity: number;
+  is_available: boolean;
+}
+
+interface SlotsByDate {
+  [date: string]: TimeSlot[];
+}
+
+interface AppointmentSelectorProps {
+  visible: boolean;
+  serviceId: string;
+  onClose: () => void;
+  onSelect: (date: string, time: string, slotId: string) => void;
+}
+
+export default function AppointmentSelector({
+  visible,
+  serviceId,
+  onClose,
+  onSelect,
+}: AppointmentSelectorProps) {
+  const [loading, setLoading] = useState(true);
+  const [slotsByDate, setSlotsByDate] = useState<SlotsByDate>({});
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [dates, setDates] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (visible) {
+      fetchSlots();
+    }
+  }, [visible]);
+
+  const fetchSlots = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/api/client/services/${serviceId}/slots`);
+      const data = response.data;
+      setSlotsByDate(data.slots || {});
+      
+      const dateKeys = Object.keys(data.slots || {});
+      setDates(dateKeys);
+      
+      if (dateKeys.length > 0) {
+        setSelectedDate(dateKeys[0]);
+      }
+    } catch (error) {
+      console.error('Erreur chargement créneaux:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Erreur',
+        text2: 'Impossible de charger les créneaux',
+        position: 'bottom',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString('fr-FR', {
+      weekday: 'long',
+      day: '2-digit',
+      month: 'long',
+    });
+  };
+
+  const formatTime = (timeStr: string) => {
+    return timeStr.substring(0, 5);
+  };
+
+  const handleSelectSlot = (slotId: string, time: string) => {
+    setSelectedTime(time);
+    setSelectedSlotId(slotId);
+  };
+
+  const handleConfirm = () => {
+    if (selectedDate && selectedTime && selectedSlotId) {
+      onSelect(selectedDate, selectedTime, selectedSlotId);
+    } else {
+      Toast.show({
+        type: 'error',
+        text1: '⚠️ Sélection requise',
+        text2: 'Veuillez choisir un créneau horaire',
+        position: 'bottom',
+      });
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.overlay}>
+        <View style={styles.container}>
+          {/* Header */}
+          <LinearGradient
+            colors={['#4F46E5', '#6366F1']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.header}
+          >
+            <Text style={styles.headerTitle}>📅 Choisissez un créneau</Text>
+            <Text style={styles.headerSubtitle}>
+              Sélectionnez une date et une heure
+            </Text>
+          </LinearGradient>
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#4F46E5" />
+              <Text style={styles.loadingText}>Chargement des créneaux...</Text>
+            </View>
+          ) : dates.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyTitle}>Aucun créneau disponible</Text>
+              <Text style={styles.emptyText}>
+                Aucun créneau n'est disponible pour ce service dans les prochains jours.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+              {/* Dates */}
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>📆 Date</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {dates.map((date) => (
+                    <TouchableOpacity
+                      key={date}
+                      style={[
+                        styles.dateButton,
+                        selectedDate === date && styles.dateButtonActive,
+                      ]}
+                      onPress={() => setSelectedDate(date)}
+                    >
+                      <Text
+                        style={[
+                          styles.dateButtonText,
+                          selectedDate === date && styles.dateButtonTextActive,
+                        ]}
+                      >
+                        {formatDate(date)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Heures */}
+              {selectedDate && slotsByDate[selectedDate] && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>⏰ Heure</Text>
+                  <View style={styles.timesGrid}>
+                    {slotsByDate[selectedDate].map((slot) => (
+                      <TouchableOpacity
+                        key={slot.id}
+                        style={[
+                          styles.timeButton,
+                          selectedSlotId === slot.id && styles.timeButtonActive,
+                          slot.available <= 0 && styles.timeButtonDisabled,
+                        ]}
+                        onPress={() => handleSelectSlot(slot.id, slot.start_time)}
+                        disabled={slot.available <= 0}
+                      >
+                        <Text
+                          style={[
+                            styles.timeButtonText,
+                            selectedSlotId === slot.id && styles.timeButtonTextActive,
+                            slot.available <= 0 && styles.timeButtonTextDisabled,
+                          ]}
+                        >
+                          {formatTime(slot.start_time)}
+                        </Text>
+                        <Text style={styles.timeButtonAvailable}>
+                          {slot.available} place{slot.available > 1 ? 's' : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          )}
+
+          {/* Actions */}
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.confirmButton, !selectedSlotId && styles.confirmButtonDisabled]}
+              onPress={handleConfirm}
+              disabled={!selectedSlotId || loading}
+            >
+              <LinearGradient
+                colors={['#4F46E5', '#6366F1']}
+                style={styles.confirmGradient}
+              >
+                <Text style={styles.confirmButtonText}>Confirmer le rendez-vous</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+              <Text style={styles.cancelButtonText}>Annuler</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    backgroundColor: '#F8FAFC',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+  },
+  header: {
+    paddingTop: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 4,
+  },
+  loadingContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#6B7280',
+    fontSize: 16,
+  },
+  emptyContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 12,
+  },
+  dateButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    marginRight: 10,
+  },
+  dateButtonActive: {
+    borderColor: '#4F46E5',
+    backgroundColor: '#EEF2FF',
+  },
+  dateButtonText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  dateButtonTextActive: {
+    color: '#4F46E5',
+  },
+  timesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  timeButton: {
+    width: '30%',
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  timeButtonActive: {
+    borderColor: '#4F46E5',
+    backgroundColor: '#EEF2FF',
+  },
+  timeButtonDisabled: {
+    opacity: 0.4,
+  },
+  timeButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1F2937',
+  },
+  timeButtonTextActive: {
+    color: '#4F46E5',
+  },
+  timeButtonTextDisabled: {
+    color: '#9CA3AF',
+  },
+  timeButtonAvailable: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  actions: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  confirmButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  confirmButtonDisabled: {
+    opacity: 0.5,
+  },
+  confirmGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  cancelButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+});

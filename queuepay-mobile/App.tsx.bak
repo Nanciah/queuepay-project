@@ -1,0 +1,172 @@
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+
+import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { SocketProvider } from './src/context/SocketContext';
+import { LanguageProvider, useLanguage } from './src/context/LanguageContext';
+import { useLanguage } from '../../context/LanguageContext';
+
+// Auth Screens
+import LoginScreen from './src/screens/auth/LoginScreen';
+import RegisterScreen from './src/screens/auth/RegisterScreen';
+
+// Client Screens
+import HomeScreen from './src/screens/client/HomeScreen';
+import ServicesScreen from './src/screens/client/ServicesScreen';
+import ServiceDetailScreen from './src/screens/client/ServiceDetailScreen';
+import WalletScreen from './src/screens/client/WalletScreen';
+import ProfileScreen from './src/screens/client/ProfileScreen';
+import TrackingScreen from './src/screens/client/TrackingScreen';
+import MyTicketsScreen from './src/screens/client/MyTicketsScreen';
+//import NotificationsScreen from './src/screens/client/NotificationsScreen';
+
+// Entreprises
+import CompaniesScreen from './src/screens/client/CompaniesScreen';
+import CompanyServicesScreen from './src/screens/client/CompanyServicesScreen';
+//import { useLanguage } from '../../context/LanguageContext';
+
+const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator();
+
+// ========== TABS NAVIGATOR ==========
+function TabNavigator() {
+  const { t } = useLanguage();
+
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: '#4F46E5' },
+        headerTintColor: '#fff',
+        tabBarActiveTintColor: '#4F46E5',
+        tabBarInactiveTintColor: '#9CA3AF',
+        tabBarStyle: { borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+      }}
+    >
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          title: t('home'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      {/* ✅ ONGLET ENTREPRISES - BIEN PLACÉ À L'INTÉRIEUR */}
+      <Tab.Screen
+        name="Companies"
+        component={CompaniesScreen}
+        options={{
+          /*title: 'Entreprises',*/
+           title: t('Entreprises') || 'Entirepirizy',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="business-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tab.Screen
+        name="Services"
+        component={ServicesScreen}
+        options={{
+          title: t('services'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="grid-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Wallet"
+        component={WalletScreen}
+        options={{
+          title: t('wallet'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="wallet-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          title: t('profile'),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+    name="MyTickets"
+    component={MyTicketsScreen}
+    options={{
+        title: 'Mes tickets',
+        tabBarIcon: ({ color, size }) => (
+            <Ionicons name="ticket-outline" size={size} color={color} />
+        ),
+    }}
+/>
+    </Tab.Navigator>
+  );
+}
+
+// ========== MAIN APP ==========
+function AppNavigator() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return null;
+  }
+
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: '#4F46E5' },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: 'bold' },
+      }}
+    >
+      <Stack.Screen 
+  name="Notifications" 
+  component={NotificationsScreen} 
+ options={{ headerShown: false }} 
+/>
+      {!user ? (
+        <>
+          <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="Register" component={RegisterScreen} options={{ headerShown: false }} />
+        </>
+      ) : (
+        <>
+          <Stack.Screen name="MainTabs" component={TabNavigator} options={{ headerShown: false }} />
+          <Stack.Screen name="ServiceDetail" component={ServiceDetailScreen} options={{ title: 'Détails du service' }} />
+          <Stack.Screen name="Tracking" component={TrackingScreen} options={{ title: 'Suivi du ticket' }} />
+          <Stack.Screen name="CompanyServices" component={CompanyServicesScreen} options={{ title: 'Services' }} />
+        </>
+      )}
+    </Stack.Navigator>
+  );
+}
+
+// ========== ROOT APP ==========
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <SocketProvider>
+            <StatusBar style="light" />
+            <NavigationContainer>
+              <AppNavigator />
+            </NavigationContainer>
+          </SocketProvider>
+        </AuthProvider>
+      </LanguageProvider>
+    </SafeAreaProvider>
+  );
+}

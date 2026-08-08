@@ -1,0 +1,296 @@
+// web-app/src/components/layout/Sidebar.jsx
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
+import toast from 'react-hot-toast';
+import { companyAdmin } from '../../services/api';
+import {
+    LayoutDashboard,
+    Building2,
+    Users,
+    User,
+    Settings,
+    LogOut,
+    UserCog,
+    Ticket,
+    Clock,
+    BarChart3,
+    ClipboardList,
+    FileText,
+    CreditCard,
+    Calendar,
+} from 'lucide-react';
+
+const Sidebar = () => {
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const { socket, isConnected, emit, on, off } = useSocket();
+
+    const [waitingCount, setWaitingCount] = useState(0);
+    const [currentServiceId, setCurrentServiceId] = useState(null);
+    const [currentServiceName, setCurrentServiceName] = useState('File d\'attente');
+    const [services, setServices] = useState([]);
+    const [loadingServices, setLoadingServices] = useState(true);
+
+    const isActive = (path) => location.pathname.startsWith(path);
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
+
+    // ========== RÉCUPÉRER LES SERVICES ==========
+    const fetchAgentServices = async () => {
+        try {
+            setLoadingServices(true);
+            const response = await companyAdmin.getAgentServices();
+            setServices(response.data || []);
+            
+            if (response.data && response.data.length > 0) {
+                const firstService = response.data[0];
+                setCurrentServiceId(firstService.id);
+                setCurrentServiceName(firstService.name);
+                fetchWaitingCount(firstService.id);
+            }
+        } catch (error) {
+            console.error('❌ [Sidebar] Erreur:', error);
+        } finally {
+            setLoadingServices(false);
+        }
+    };
+
+    // ========== CHARGER LE NOMBRE EN ATTENTE ==========
+    const fetchWaitingCount = async (serviceId) => {
+        try {
+            const response = await fetch(`http://localhost:5000/api/company/agent/queue/${serviceId}/status`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+            });
+            const data = await response.json();
+            if (data && data.waiting !== undefined) {
+                setWaitingCount(data.waiting);
+            }
+        } catch (error) {
+            console.error('❌ [Sidebar] Erreur:', error);
+        }
+    };
+
+    // ========== CHARGEMENT INITIAL ==========
+    useEffect(() => {
+        if (user?.role === 'agent') {
+            fetchAgentServices();
+        }
+    }, [user]);
+
+    // ========== WEBSOCKET ==========
+    useEffect(() => {
+        if (!socket || !isConnected || !currentServiceId) return;
+
+        const onQueueUpdate = (data) => {
+            if (data && data.waitingCount !== undefined) {
+                setWaitingCount(data.waitingCount);
+            } else {
+                fetchWaitingCount(currentServiceId);
+            }
+        };
+
+        const onNewTicket = () => setWaitingCount(prev => prev + 1);
+        const onTicketCompleted = () => setWaitingCount(prev => Math.max(0, prev - 1));
+        const onTicketCancelled = () => setWaitingCount(prev => Math.max(0, prev - 1));
+
+        on('queue-updated', onQueueUpdate);
+        on('new-ticket', onNewTicket);
+        on('ticket-completed', onTicketCompleted);
+        on('ticket-cancelled', onTicketCancelled);
+
+        emit('join-queue-room', { serviceId: currentServiceId });
+
+        return () => {
+            off('queue-updated', onQueueUpdate);
+            off('new-ticket', onNewTicket);
+            off('ticket-completed', onTicketCompleted);
+            off('ticket-cancelled', onTicketCancelled);
+        };
+    }, [socket, isConnected, currentServiceId]);
+
+    // ========== NAVIGATION ==========
+    const navigateToQueue = () => {
+        if (currentServiceId) {
+            navigate('/agent/queue', { 
+                state: { serviceId: currentServiceId, serviceName: currentServiceName }
+            });
+        } else {
+            toast.error('Aucun service assigné');
+        }
+    };
+
+    const navigateToQueueCreneau = () => {
+        if (currentServiceId) {
+            navigate('/agent/queue-creneau', { 
+                state: { serviceId: currentServiceId, serviceName: currentServiceName }
+            });
+        } else {
+            toast.error('Aucun service assigné');
+        }
+    };
+
+    // ========== MENUS ==========
+    const superAdminMenu = [
+        { icon: LayoutDashboard, label: 'Dashboard', path: '/super-admin/dashboard', group: 'Principal' },
+        { icon: Building2, label: 'Entreprises', path: '/super-admin/companies', group: 'Principal' },
+        { icon: Users, label: 'Utilisateurs', path: '/super-admin/users', group: 'Principal' },
+        { icon: CreditCard, label: 'Transactions', path: '/super-admin/transactions', group: 'Principal' },
+        { icon: Clock, label: "Files d'attente", path: '/super-admin/queues', group: 'Principal' },
+        { icon: BarChart3, label: 'Statistiques', path: '/super-admin/stats', group: 'Analyse' },
+        { icon: FileText, label: 'Rapports', path: '/super-admin/reports', group: 'Analyse' },
+        { icon: Settings, label: 'Configuration', path: '/super-admin/settings', group: 'Système' },
+    ];
+
+    const companyAdminMenu = [
+        { icon: LayoutDashboard, label: 'Dashboard', path: '/company-admin/dashboard', group: 'Principal' },
+        { icon: ClipboardList, label: 'Services', path: '/company-admin/services', group: 'Principal' },
+        { icon: UserCog, label: 'Agents', path: '/company-admin/agents', group: 'Principal' },
+        { icon: Clock, label: "Files d'attente", path: '/company-admin/queues', group: 'Principal' },
+        { icon: CreditCard, label: 'Transactions', path: '/company-admin/transactions', group: 'Principal' },
+        { icon: BarChart3, label: 'Statistiques', path: '/company-admin/stats', group: 'Analyse' },
+        { icon: Settings, label: 'Configuration', path: '/company-admin/settings', group: 'Système' },
+    ];
+
+    const agentMenu = [
+        { icon: LayoutDashboard, label: 'Dashboard', path: '/agent/dashboard', group: 'Principal', onClick: () => navigate('/agent/dashboard') },
+        { icon: Ticket, label: "File d'attente", path: '/agent/queue', group: 'Principal', badge: waitingCount, onClick: navigateToQueue },
+        { icon: Calendar, label: "Rendez-vous", path: '/agent/queue-creneau', group: 'Principal', onClick: navigateToQueueCreneau },
+        { icon: Clock, label: 'Historique', path: '/agent/history', group: 'Principal', onClick: () => navigate('/agent/history') },
+        { icon: User, label: 'Mon profil', path: '/agent/profile', group: 'Principal', onClick: () => navigate('/agent/profile') },
+    ];
+
+    const getMenuItems = () => {
+        switch (user?.role) {
+            case 'super_admin': return superAdminMenu;
+            case 'company_admin': return companyAdminMenu;
+            case 'agent': return agentMenu;
+            default: return [];
+        }
+    };
+
+    const menuItems = getMenuItems();
+    const groupedItems = menuItems.reduce((acc, item) => {
+        if (!acc[item.group]) acc[item.group] = [];
+        acc[item.group].push(item);
+        return acc;
+    }, {});
+
+    const getRoleLabel = () => {
+        switch (user?.role) {
+            case 'super_admin': return 'Super Administrateur';
+            case 'company_admin': return 'Administrateur Entreprise';
+            case 'agent': return 'Agent de Guichet';
+            default: return 'Utilisateur';
+        }
+    };
+
+    const getRoleBadge = () => {
+        switch (user?.role) {
+            case 'super_admin': return 'Super Admin';
+            case 'company_admin': return 'Admin Entreprise';
+            case 'agent': return 'Agent';
+            default: return 'Utilisateur';
+        }
+    };
+
+    return (
+        <div className="h-screen w-64 flex flex-col fixed left-0 top-0 z-50 bg-white border-r border-gray-100 shadow-sm">
+            {/* LOGO */}
+            <div className="px-5 pt-5 pb-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-r from-indigo-500 to-purple-500 shadow-lg">
+                        <span className="text-xl">⏱️</span>
+                    </div>
+                    <div>
+                        <h1 className="text-lg font-bold text-gray-900">QueuePay</h1>
+                        <p className="text-xs font-medium text-gray-500">{getRoleLabel()}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* CARTE UTILISATEUR */}
+            <div className="px-3 pb-3">
+                <div className="flex items-center gap-3 p-3.5 rounded-xl bg-gray-50 border border-gray-200">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-600 shadow-md">
+                        {user?.firstName?.[0]}{user?.lastName?.[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">
+                            {user?.firstName} {user?.lastName}
+                        </p>
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-100 text-indigo-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                            {getRoleBadge()}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            {/* NAVIGATION */}
+            <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+                {Object.entries(groupedItems).map(([groupName, items], groupIndex) => (
+                    <div key={groupName}>
+                        {groupIndex > 0 && <div className="my-3 mx-2 h-px bg-gray-200" />}
+                        <div className="px-3 pb-1.5 pt-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                            {groupName}
+                        </div>
+                        {items.map((item) => {
+                            const Icon = item.icon;
+                            const active = isActive(item.path);
+                            return (
+                                <button
+                                    key={item.path}
+                                    onClick={item.onClick || (() => navigate(item.path))}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 relative group ${
+                                        active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {active && (
+                                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-gradient-to-b from-indigo-500 to-purple-500" />
+                                    )}
+                                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-200 ${
+                                        active ? 'bg-indigo-500 text-white shadow-md' : 'bg-transparent text-gray-400'
+                                    }`}>
+                                        <Icon className="w-[18px] h-[18px]" strokeWidth={2} />
+                                        {item.badge && item.badge > 0 && (
+                                            <span className="absolute -top-1 -right-1 flex items-center justify-center text-[9px] font-bold text-white rounded-full min-w-[18px] h-[18px] px-1 bg-red-500 border-2 border-white animate-pulse">
+                                                {item.badge > 99 ? '99+' : item.badge}
+                                            </span>
+                                        )}
+                                    </span>
+                                    <span className="text-[13.5px] font-medium flex-1 text-left">
+                                        {item.label}
+                                    </span>
+                                    {item.badge && item.badge > 0 && (
+                                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">
+                                            {item.badge}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                ))}
+            </nav>
+
+            {/* DÉCONNEXION */}
+            <div className="p-3 border-t border-gray-100">
+                <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 bg-red-50 border border-red-200 text-red-600 hover:bg-red-100"
+                >
+                    <LogOut className="w-[18px] h-[18px]" strokeWidth={2} />
+                    <span className="text-[13.5px] font-medium">Déconnexion</span>
+                </button>
+            </div>
+        </div>
+    );
+};
+
+export default Sidebar;

@@ -1,0 +1,820 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  Animated,
+  Dimensions,
+  Alert,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
+import { useSocket } from '../../context/SocketContext';
+import api from '../../services/api';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Toast from 'react-native-toast-message';
+
+const { width } = Dimensions.get('window');
+
+interface Ticket {
+  id: string;
+  ticket_number: string;
+  status: string;
+  position: number;
+  estimated_wait_time: number;
+  service_id: string;
+  created_at: string;
+  waiting_count?: number;
+  service?: {
+    id: string;
+    name: string;
+  };
+}
+
+export default function TrackingScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { ticketId } = route.params as { ticketId: string };
+  const { user } = useAuth();
+  const { t } = useLanguage();
+  const { socket, isConnected, joinService, leaveService } = useSocket();
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [position, setPosition] = useState<number | null>(null);
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
+  const [waitingCount, setWaitingCount] = useState<number>(0);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState('pending');
+  const [isCalled, setIsCalled] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [countdownSeconds, setCountdownSeconds] = useState<number>(0);
+  const [showCallAlert, setShowCallAlert] = useState(false);
+  const countdownInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // ✅ Animation de pulsation
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  // ✅ Animation d'entrée
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  // ✅ Démarrer le compte à rebours
+  const startCountdown = (minutes: number) => {
+    if (countdownInterval.current) {
+      clearInterval(countdownInterval.current);
+    }
+    
+    const totalSeconds = Math.max(minutes * 60, 0);
+    setCountdownSeconds(totalSeconds);
+    
+    if (totalSeconds > 0) {
+      countdownInterval.current = setInterval(() => {
+        setCountdownSeconds(prev => {
+          if (prev <= 1) {
+            if (countdownInterval.current) {
+              clearInterval(countdownInterval.current);
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+  };
+
+  // ✅ Formater le temps en minutes:secondes
+  const formatCountdown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // ✅ Mettre à jour la progression
+  const updateProgress = (currentPosition: number, totalWaiting: number) => {
+    if (currentPosition > 0 && totalWaiting > 0) {
+      const progressValue = 1 - (currentPosition / totalWaiting);
+      setProgress(Math.max(0, Math.min(1, progressValue)));
+    } else if (currentPosition === 1 && totalWaiting === 0) {
+      setProgress(1);
+    } else {
+      setProgress(0);
+    }
+  };
+
+  // ✅ Charger les données du ticket
+  const fetchTicket = async () => {
+    try {
+      const response = await api.get(`/api/client/tickets/${ticketId}`);
+      const data = response.data;
+      setTicket(data);
+      setPosition(data.position || 0);
+      setEstimatedTime(data.estimated_wait_time || 0);
+      setStatus(data.status || 'pending');
+      
+      // ✅ Récupérer le nombre de clients en file
+      const waitingCountData = data.waiting_count || data.waitingCount || 0;
+      setWaitingCount(waitingCountData);
+      
+      if (data.status === 'called') {
+        setIsCalled(true);
+        setShowCallAlert(true);
+        setPosition(1);
+        setProgress(1);
+        Toast.show({
+          type: 'success',
+          text1: '🔔 C\'est votre tour !',
+          text2: `Ticket ${data.ticket_number} appelé au guichet`,
+          position: 'bottom',
+          visibilityTime: 10000,
+        });
+      }
+      
+      if (data.status === 'completed') {
+        setIsCompleted(true);
+        Toast.show({
+          type: 'success',
+          text1: '✅ Service rendu !',
+          text2: 'Merci d\'avoir utilisé QueuePay',
+          position: 'bottom',
+          visibilityTime: 3000,
+        });
+      }
+      
+      // Démarrer le compte à rebours
+      if (data.estimated_wait_time && data.estimated_wait_time > 0 && data.status !== 'called') {
+        startCountdown(data.estimated_wait_time);
+      }
+      
+      // Mettre à jour la progression
+      if (data.position && waitingCountData) {
+        updateProgress(data.position, waitingCountData);
+      }
+    } catch (error) {
+      console.error('Erreur chargement ticket:', error);
+      Alert.alert('Erreur', 'Impossible de charger les informations du ticket');
+      navigation.goBack();
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // ✅ WebSocket - Écouter les mises à jour
+  useEffect(() => {
+    if (!socket || !isConnected || !ticket) {
+      console.log('⏳ [Tracking] Socket non disponible');
+      return;
+    }
+
+    console.log('📡 [Tracking] Connexion WebSocket pour le ticket:', ticketId);
+    
+    // ✅ 🔥 REJOINDRE LA ROOM DU TICKET
+    socket.emit('track-ticket', { ticketId });
+    console.log('📡 [Tracking] Émission track-ticket pour rejoindre la room:', ticketId);
+    
+    if (ticket.service_id) {
+      joinService(ticket.service_id);
+      console.log('📡 [Tracking] Rejoint le service:', ticket.service_id);
+    }
+
+    // ✅ Mise à jour de la position
+    const onPositionUpdate = (data: any) => {
+      console.log('📢 [Tracking] Position mise à jour reçue!', data);
+      if (data.ticketId === ticketId) {
+        const newPosition = data.position || 0;
+        const newWaitingCount = data.waitingCount || waitingCount;
+        const newEstimatedTime = data.estimatedTime || estimatedTime;
+        
+        console.log(`📊 [Tracking] Nouvelle position: ${newPosition}, File: ${newWaitingCount}, Attente: ${newEstimatedTime}`);
+        
+        setPosition(newPosition);
+        setWaitingCount(newWaitingCount);
+        setEstimatedTime(newEstimatedTime);
+        
+        // Mettre à jour la progression
+        updateProgress(newPosition, newWaitingCount);
+        
+        // Redémarrer le compte à rebours
+        if (newEstimatedTime && newEstimatedTime > 0) {
+          startCountdown(newEstimatedTime);
+        }
+        
+        // Mettre à jour le statut
+        if (data.status) {
+          setStatus(data.status);
+        }
+      }
+    };
+
+    // ✅ Vous êtes appelé
+    const onYouAreCalled = (data: any) => {
+      console.log('📢 [Tracking] Vous êtes appelé reçu!', data);
+      if (data.ticketId === ticketId) {
+        setIsCalled(true);
+        setShowCallAlert(true);
+        setStatus('called');
+        setPosition(1);
+        setProgress(1);
+        setCountdownSeconds(0);
+        
+        Toast.show({
+          type: 'success',
+          text1: '🔔 C\'est votre tour !',
+          text2: `Ticket ${ticket.ticket_number} appelé au guichet`,
+          position: 'bottom',
+          visibilityTime: 10000,
+        });
+      }
+    };
+
+    // ✅ Ticket complété
+    const onTicketCompleted = (data: any) => {
+      console.log('📢 [Tracking] Ticket complété reçu!', data);
+      if (data.ticketId === ticketId) {
+        setIsCompleted(true);
+        setStatus('completed');
+        setProgress(1);
+        
+        Toast.show({
+          type: 'success',
+          text1: '✅ Service rendu !',
+          text2: 'Merci d\'avoir utilisé QueuePay',
+          position: 'bottom',
+          visibilityTime: 3000,
+        });
+      }
+    };
+
+    // ✅ Mise à jour de la queue
+    const onQueueUpdated = (data: any) => {
+      console.log('📢 [Tracking] File mise à jour reçue:', data);
+      if (data.serviceId === ticket.service_id) {
+        setWaitingCount(data.waitingCount || 0);
+      }
+    };
+
+    // ✅ Ticket annulé
+    const onTicketCancelled = (data: any) => {
+      console.log('📢 [Tracking] Ticket annulé reçu:', data);
+      if (data.ticketId === ticketId) {
+        setStatus('cancelled');
+        Toast.show({
+          type: 'error',
+          text1: '❌ Ticket annulé',
+          text2: 'Votre ticket a été annulé',
+          position: 'bottom',
+        });
+        setTimeout(() => {
+          navigation.goBack();
+        }, 1500);
+      }
+    };
+
+    // ✅ S'abonner aux événements via le socket
+    socket.on('position-update', onPositionUpdate);
+    socket.on('you-are-called', onYouAreCalled);
+    socket.on('queue-updated', onQueueUpdated);
+    socket.on('ticket-completed', onTicketCompleted);
+    socket.on('ticket-cancelled', onTicketCancelled);
+
+    console.log('📡 [Tracking] Écouteurs enregistrés avec succès');
+
+    return () => {
+      console.log('🧹 [Tracking] Nettoyage des écouteurs');
+      socket.off('position-update', onPositionUpdate);
+      socket.off('you-are-called', onYouAreCalled);
+      socket.off('queue-updated', onQueueUpdated);
+      socket.off('ticket-completed', onTicketCompleted);
+      socket.off('ticket-cancelled', onTicketCancelled);
+      
+      if (ticket.service_id) {
+        leaveService(ticket.service_id);
+      }
+      
+      if (countdownInterval.current) {
+        clearInterval(countdownInterval.current);
+      }
+    };
+  }, [socket, isConnected, ticket, ticketId]);
+
+  // ✅ Chargement initial
+  useEffect(() => {
+    fetchTicket();
+    
+    return () => {
+      if (countdownInterval.current) {
+        clearInterval(countdownInterval.current);
+      }
+    };
+  }, []);
+
+  // ✅ Annuler le ticket
+  const handleCancelTicket = () => {
+    Alert.alert(
+      'Annuler le ticket',
+      'Voulez-vous vraiment annuler votre ticket ?',
+      [
+        { text: 'Non', style: 'cancel' },
+        {
+          text: 'Oui',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.put(`/api/client/tickets/${ticketId}/cancel`);
+              Toast.show({
+                type: 'success',
+                text1: 'Ticket annulé',
+                text2: 'Votre ticket a été annulé avec succès',
+                position: 'bottom',
+              });
+              navigation.goBack();
+            } catch (error) {
+              Alert.alert('Erreur', 'Impossible d\'annuler le ticket');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // ✅ Formater le temps (affichage simple)
+  const formatTime = (minutes: number) => {
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours}h ${mins}min`;
+  };
+
+  const getStatusInfo = () => {
+    const statuses: { [key: string]: { label: string; color: string; icon: string } } = {
+      pending: { label: 'En file', color: '#3B82F6', icon: 'time-outline' },
+      waiting: { label: 'En attente', color: '#F59E0B', icon: 'hourglass-outline' },
+      called: { label: 'Appelé !', color: '#10B981', icon: 'call-outline' },
+      completed: { label: 'Terminé', color: '#6B7280', icon: 'checkmark-circle-outline' },
+      cancelled: { label: 'Annulé', color: '#EF4444', icon: 'close-circle-outline' },
+    };
+    return statuses[status] || statuses.pending;
+  };
+
+  const statusInfo = getStatusInfo();
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4F46E5" />
+        <Text style={styles.loadingText}>Chargement de votre ticket...</Text>
+      </View>
+    );
+  }
+
+  if (!ticket) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Ionicons name="alert-circle-outline" size={64} color="#D1D5DB" />
+        <Text style={styles.loadingText}>Ticket non trouvé</Text>
+      </View>
+    );
+  }
+
+  // ✅ Si le ticket est complété, afficher un message
+  if (isCompleted) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Ionicons name="checkmark-circle" size={64} color="#10B981" />
+        <Text style={[styles.loadingText, { color: '#10B981', fontSize: 20, fontWeight: 'bold' }]}>
+          ✅ Service rendu !
+        </Text>
+        <Text style={[styles.loadingText, { color: '#6B7280' }]}>
+          Merci d'avoir utilisé QueuePay
+        </Text>
+        <Text style={[styles.loadingText, { color: '#9CA3AF', fontSize: 12, marginTop: 20 }]}>
+          Retournez à "Mes tickets" pour voir votre historique
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <ScrollView
+        style={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={fetchTicket} />
+        }
+      >
+        {/* Header */}
+        <LinearGradient
+          colors={['#4F46E5', '#6366F1']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.header}
+        >
+          <Animated.View style={[styles.headerContent, { opacity: fadeAnim }]}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.backButton}
+            >
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Suivi du ticket</Text>
+            <View style={{ width: 40 }} />
+          </Animated.View>
+        </LinearGradient>
+
+        {/* Ticket info */}
+        <Animated.View style={[styles.ticketCard, { opacity: fadeAnim }]}>
+          <View style={styles.ticketHeader}>
+            <View>
+              <Text style={styles.ticketLabel}>Votre ticket</Text>
+              <Animated.Text style={[styles.ticketNumber, { transform: [{ scale: pulseAnim }] }]}>
+                {ticket.ticket_number}
+              </Animated.Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: `${statusInfo.color}20` }]}>
+              <Ionicons name={statusInfo.icon as any} size={16} color={statusInfo.color} />
+              <Text style={[styles.statusText, { color: statusInfo.color }]}>
+                {statusInfo.label}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.ticketService}>
+            <Ionicons name="business-outline" size={16} color="#6B7280" />
+            <Text style={styles.ticketServiceText}>
+              {ticket.service?.name || 'Service'}
+            </Text>
+          </View>
+
+          {/* ✅ Stats avec compte à rebours */}
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: position === 1 && position !== null ? '#10B981' : '#4F46E5' }]}>
+                {position !== null ? position : '-'}
+                {position === 1 && !isCalled && (
+                  <Text style={{ fontSize: 12, color: '#10B981', marginLeft: 4 }}>⭐</Text>
+                )}
+              </Text>
+              <Text style={styles.statLabel}>Position</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: '#F59E0B' }]}>
+                {isCalled ? (
+                  '0:00'
+                ) : estimatedTime !== null && estimatedTime > 0 ? (
+                  formatCountdown(countdownSeconds)
+                ) : (
+                  '-'
+                )}
+              </Text>
+              <Text style={styles.statLabel}>Attente estimée</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: waitingCount > 0 ? '#EF4444' : '#6B7280' }]}>
+                {waitingCount || 0}
+              </Text>
+              <Text style={styles.statLabel}>En file</Text>
+            </View>
+          </View>
+
+          {/* ✅ Barre de progression */}
+          {status !== 'completed' && status !== 'cancelled' && (
+            <View style={styles.progressContainer}>
+              <View style={styles.progressHeader}>
+                <Text style={styles.progressLabel}>Progression</Text>
+                <Text style={styles.progressPercent}>
+                  {Math.round(progress * 100)}%
+                </Text>
+              </View>
+              <View style={styles.progressBar}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${Math.min(Math.max(progress, 0), 1) * 100}%`,
+                      backgroundColor: isCalled ? '#10B981' : '#4F46E5',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* ✅ Message spécial : Vous êtes appelé */}
+          {showCallAlert && (
+            <Animated.View 
+              style={[
+                styles.calledContainer,
+                {
+                  transform: [{
+                    scale: pulseAnim
+                  }]
+                }
+              ]}
+            >
+              <Ionicons name="call-outline" size={32} color="#10B981" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.calledTitle}>🎉 C'est votre tour !</Text>
+                <Text style={styles.calledText}>
+                  Présentez-vous au guichet avec votre ticket
+                </Text>
+              </View>
+            </Animated.View>
+          )}
+
+          {/* ✅ QR Code */}
+          <View style={styles.qrContainer}>
+            <View style={styles.qrBox}>
+              <Ionicons name="qr-code-outline" size={80} color="#4F46E5" />
+            </View>
+            <Text style={styles.qrText}>Présentez ce QR Code au guichet</Text>
+          </View>
+        </Animated.View>
+
+        {/* Status de connexion */}
+        <View style={styles.connectionStatus}>
+          <View style={[styles.connectionDot, isConnected ? styles.connected : styles.disconnected]} />
+          <Text style={styles.connectionText}>
+            {isConnected ? '🟢 Mises à jour en temps réel' : '🔴 Hors ligne - actualisez manuellement'}
+          </Text>
+        </View>
+
+        {/* Actions */}
+        {status !== 'completed' && status !== 'cancelled' && status !== 'called' && (
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={handleCancelTicket}
+          >
+            <Ionicons name="close-circle-outline" size={20} color="#EF4444" />
+            <Text style={styles.cancelButtonText}>Annuler le ticket</Text>
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#6B7280',
+    fontSize: 16,
+  },
+  content: {
+    flex: 1,
+  },
+  header: {
+    paddingTop: 48,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  ticketCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  ticketHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  ticketLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  ticketNumber: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#4F46E5',
+    marginTop: 4,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 6,
+  },
+  statusText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  ticketService: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  ticketServiceText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1F2937',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  progressContainer: {
+    marginBottom: 16,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  progressLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  progressPercent: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4F46E5',
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  calledContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D1FAE5',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#10B981',
+  },
+  calledTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#065F46',
+  },
+  calledText: {
+    fontSize: 14,
+    color: '#065F46',
+  },
+  qrContainer: {
+    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  qrBox: {
+    width: 120,
+    height: 120,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  qrText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 8,
+  },
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  connectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  connected: {
+    backgroundColor: '#10B981',
+  },
+  disconnected: {
+    backgroundColor: '#EF4444',
+  },
+  connectionText: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    gap: 8,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#EF4444',
+  },
+});
